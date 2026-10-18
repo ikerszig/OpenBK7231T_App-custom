@@ -30,7 +30,7 @@ static unsigned short bl0942_opts= 0;
 #define BL0942_DEVICE_INDEX_1 1
 
 #define BL0942_UART_RECEIVE_BUFFER_SIZE 256
-#define BL0942_UART_ADDR 0 // 0 - 3
+#define BL0942_UART_ADDR 1 // 0 - 3   TEMP ISOLATED TEST: was 0, trying 1 on the PROVEN primary query path
 // Our device has 2 physical BL0942 chips sharing ONE UART bus (UART1),
 // distinguished by IC address (datasheet: A2_NCS/A1 pins, TSSOP14 only).
 // Device index 1 is queried at address BL0942_UART_ADDR_SHARED_1 on the
