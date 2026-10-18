@@ -31,6 +31,12 @@ static unsigned short bl0942_opts= 0;
 
 #define BL0942_UART_RECEIVE_BUFFER_SIZE 256
 #define BL0942_UART_ADDR 0 // 0 - 3
+// Our device has 2 physical BL0942 chips sharing ONE UART bus (UART1),
+// distinguished by IC address (datasheet: A2_NCS/A1 pins, TSSOP14 only).
+// Device index 1 is queried at address BL0942_UART_ADDR_SHARED_1 on the
+// SAME physical port as device index 0, instead of a second real UART.
+#define BL0942_UART_ADDR_SHARED_1 1
+#define BL0942_UART_ADDR_FOR(dev) ((dev) == BL0942_DEVICE_INDEX_1 ? BL0942_UART_ADDR_SHARED_1 : BL0942_UART_ADDR)
 #define BL0942_UART_CMD_READ(addr) (0x58 | addr)
 #define BL0942_UART_CMD_WRITE(addr) (0xA8 | addr)
 #define BL0942_UART_REG_PACKET 0xAA
@@ -206,7 +212,7 @@ static int BL0942_UART_TryToGetNextPacket(int adeviceindex, int auartindex) {
 	}
     if (UART_GetByteEx(auartindex, 0) != 0x55)
 		return 0;
-    checksum = BL0942_UART_CMD_READ(BL0942_UART_ADDR);
+    checksum = BL0942_UART_CMD_READ(BL0942_UART_ADDR_FOR(adeviceindex));
 
     for(i = 0; i < BL0942_UART_PACKET_LEN-1; i++) {
         checksum += UART_GetByteEx(auartindex, i);
@@ -366,7 +372,7 @@ void BL0942_UART_Init(void) {
       BL0942_UART_InitEx(UART_PORT_INDEX_0);
     }
     if (bl0942_opts & BL0942_OPTBIT1_UART2) {
-      BL0942_UART_InitEx(UART_PORT_INDEX_1);
+      // Shared-bus mode: no separate UART2 to init, device 1 reuses UART1
     }
   }
 }
@@ -377,7 +383,7 @@ void BL0942_UART_RunEverySecondEx(int adeviceindex, int auartindex) {
   BL0942_UART_TryToGetNextPacket(adeviceindex, auartindex);
 
   UART_InitUARTEx(auartindex, bl0942_baudRate, 0, false);
-  UART_SendByteEx(auartindex, BL0942_UART_CMD_READ(BL0942_UART_ADDR));
+  UART_SendByteEx(auartindex, BL0942_UART_CMD_READ(BL0942_UART_ADDR_FOR(adeviceindex)));
   UART_SendByteEx(auartindex, BL0942_UART_REG_PACKET);
 }
 
@@ -391,7 +397,8 @@ void BL0942_UART_RunEverySecond(void) {
       BL0942_UART_RunEverySecondEx(BL0942_DEVICE_INDEX_0, UART_PORT_INDEX_0);
     }
     if (bl0942_opts & BL0942_OPTBIT1_UART2) {
-      BL0942_UART_RunEverySecondEx(BL0942_DEVICE_INDEX_1, UART_PORT_INDEX_1);
+      // Shared-bus mode: 2nd chip is on the SAME UART1 port, different IC address
+      BL0942_UART_RunEverySecondEx(BL0942_DEVICE_INDEX_1, UART_PORT_INDEX_0);
     }
   }
 }
