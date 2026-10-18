@@ -35,7 +35,7 @@ static unsigned short bl0942_opts= 0;
 // distinguished by IC address (datasheet: A2_NCS/A1 pins, TSSOP14 only).
 // Device index 1 is queried at address BL0942_UART_ADDR_SHARED_1 on the
 // SAME physical port as device index 0, instead of a second real UART.
-#define BL0942_UART_ADDR_SHARED_1 1
+#define BL0942_UART_ADDR_SHARED_1 2
 #define BL0942_UART_ADDR_FOR(dev) ((dev) == BL0942_DEVICE_INDEX_1 ? BL0942_UART_ADDR_SHARED_1 : BL0942_UART_ADDR)
 #define BL0942_UART_CMD_READ(addr) (0x58 | addr)
 #define BL0942_UART_CMD_WRITE(addr) (0xA8 | addr)
