@@ -163,6 +163,12 @@ void UART_SendByteEx(int auartindex, byte b) {
 #endif
 }
 
+void UART_PollEx(int auartindex) {
+#ifdef UART_2_UARTS_CONCURRENT
+  HAL_UART_PollEx(auartindex);
+#endif
+}
+
 void UART_SendByte(byte b) {
   int fuartindex = UART_GetSelectedPortIndex();
   UART_SendByteEx(fuartindex, b);

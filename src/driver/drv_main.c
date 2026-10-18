@@ -595,7 +595,11 @@ static driver_t g_drivers[] = {
 	BL0942_UART_Init,                        // Init
 	BL0942_UART_RunEverySecond,              // onEverySecond
 	BL09XX_AppendInformationToHTTPIndexPage, // appendInformationToHTTPIndexPage
+#if ENABLE_BL_TWIN
+	BL0942_RunQuickTick,                     // runQuickTick
+#else
 	NULL,                                    // runQuickTick
+#endif
 	NULL,                                    // stopFunction
 	NULL,                                    // onChannelChanged
 	NULL,                                    // onHassDiscovery

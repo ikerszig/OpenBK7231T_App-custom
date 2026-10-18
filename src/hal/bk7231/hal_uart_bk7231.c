@@ -23,6 +23,17 @@ int bk_port_from_portindex(int auartindex) {
   return (auartindex == UART_PORT_INDEX_1) ? BK_UART_2 : BK_UART_1; //just to avoid error if more uarts in future
 }
 
+// Manually drain the hardware UART RX FIFO into the ring buffer.
+// Workaround for a BK7231N UART2 RX-interrupt reliability bug
+// (openshwprojects/OpenBK7231T_App#1258): the callback registered via
+// bk_uart_set_rx_callback does not reliably fire for UART2, but the
+// bytes ARE present in hardware - uart_read_byte() still finds them
+// when called directly. Call this from a quick/frequent tick instead
+// of relying solely on the interrupt.
+void HAL_UART_PollEx(int auartindex) {
+  test_ty_read_uart_data_to_buffer(bk_port_from_portindex(auartindex), NULL);
+}
+
 void HAL_UART_SendByteEx(int auartindex, byte b)
 {
 	bk_send_byte(bk_port_from_portindex(auartindex), b);

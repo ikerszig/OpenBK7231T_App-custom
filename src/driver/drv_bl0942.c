@@ -372,7 +372,7 @@ void BL0942_UART_Init(void) {
       BL0942_UART_InitEx(UART_PORT_INDEX_0);
     }
     if (bl0942_opts & BL0942_OPTBIT1_UART2) {
-      // Shared-bus mode: no separate UART2 to init, device 1 reuses UART1
+      BL0942_UART_InitEx(UART_PORT_INDEX_1);
     }
   }
 }
@@ -397,9 +397,22 @@ void BL0942_UART_RunEverySecond(void) {
       BL0942_UART_RunEverySecondEx(BL0942_DEVICE_INDEX_0, UART_PORT_INDEX_0);
     }
     if (bl0942_opts & BL0942_OPTBIT1_UART2) {
-      // Shared-bus mode: 2nd chip is on the SAME UART1 port, different IC address
-      BL0942_UART_RunEverySecondEx(BL0942_DEVICE_INDEX_1, UART_PORT_INDEX_0);
+      BL0942_UART_RunEverySecondEx(BL0942_DEVICE_INDEX_1, UART_PORT_INDEX_1);
     }
+  }
+}
+
+// Quick-tick poll: manually drain each active port's hardware RX FIFO.
+// Workaround for the UART2 RX-interrupt reliability bug (see comment on
+// HAL_UART_PollEx). Runs far more often than the once-a-second request
+// tick, so bytes that arrived but were missed by the interrupt still
+// end up in the ring buffer before BL0942_UART_RunEverySecondEx reads it.
+void BL0942_RunQuickTick(void) {
+  if (bl0942_opts & BL0942_OPTBIT0_UART1) {
+    UART_PollEx(UART_PORT_INDEX_0);
+  }
+  if (bl0942_opts & BL0942_OPTBIT1_UART2) {
+    UART_PollEx(UART_PORT_INDEX_1);
   }
 }
 #else

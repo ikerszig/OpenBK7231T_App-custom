@@ -40,6 +40,7 @@ int UART_GetDataSizeEx(int auartindex);
 byte UART_GetByteEx(int auartindex, int idx);
 void UART_ConsumeBytesEx(int auartindex, int idx);
 void UART_SendByteEx(int auartindex, byte b);
+void UART_PollEx(int auartindex);
 int UART_InitUARTEx(int auartindex, int baud, int parity, bool hwflowc);
 void UART_LogBufState(int auartindex);
 

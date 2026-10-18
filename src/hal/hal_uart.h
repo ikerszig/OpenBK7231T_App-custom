@@ -7,6 +7,7 @@
 
 #ifdef UART_2_UARTS_CONCURRENT
 void HAL_UART_SendByteEx(int auartindex, byte b);
+void HAL_UART_PollEx(int auartindex);
 
 int HAL_UART_InitEx(int auartindex, int baud, int parity, bool hwflowc, int txOverride, int rxOverride);
 #else
