@@ -17,8 +17,8 @@ extern int g_secondsElapsed;
 #if PLATFORM_BEKEN
 // to get uart.h
 #include "command_line.h"
-int UART_PORT = UART2_PORT;
-int UART_PORT_INDEX = 1;
+int UART_PORT = UART1_PORT;
+int UART_PORT_INDEX = 0;
 #endif
 #if PLATFORM_BEKEN_NEW
 #include "uart.h"
