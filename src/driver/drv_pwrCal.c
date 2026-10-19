@@ -11,6 +11,14 @@ static pwr_cal_type_t cal_type;
 static float voltage_cal = 1;
 static float current_cal = 1;
 static float power_cal = 1;
+// Additive raw-domain offset for current, to correct the non-zero
+// noise-floor/leakage reading seen at low loads (the BL0942 Calibrate()
+// mechanism is multiplicative-only and cannot fix this). Reuses the
+// unused CFG_OBK_RES_KIA slot (HLW8112-specific, not used by this
+// BL0942-only device) for persistence - our board never runs the
+// HLW8112 driver so this slot is safely free to repurpose.
+#define CFG_OBK_CURRENT_OFFSET CFG_OBK_RES_KIA
+static float current_offset_raw = 0;
 
 static int latest_raw_voltage;
 static float latest_raw_current;
@@ -65,6 +73,14 @@ static commandResult_t CalibrateCurrent(const void *context, const char *cmd,
                      CFG_OBK_CURRENT);
 }
 
+static commandResult_t CalibrateCurrentZero(const void *context, const char *cmd,
+                                        const char *args, int cmdFlags) {
+    current_offset_raw = latest_raw_current;
+    CFG_SetPowerMeasurementCalibrationFloat(CFG_OBK_CURRENT_OFFSET, current_offset_raw);
+    ADDLOG_INFO(LOG_FEATURE_ENERGYMETER, "CurrentZero: offset set to %f (raw)", current_offset_raw);
+    return CMD_RES_OK;
+}
+
 static commandResult_t CalibratePower(const void *context, const char *cmd,
                                       const char *args, int cmdFlags) {
     return Calibrate(cmd, args, latest_raw_power, &power_cal, CFG_OBK_POWER);
@@ -84,6 +100,7 @@ void PwrCal_Init(pwr_cal_type_t type, float default_voltage_cal,
                                                           default_current_cal);
     power_cal = CFG_GetPowerMeasurementCalibrationFloat(CFG_OBK_POWER,
                                                         default_power_cal);
+    current_offset_raw = CFG_GetPowerMeasurementCalibrationFloat(CFG_OBK_CURRENT_OFFSET, 0);
 
 	//cmddetail:{"name":"VoltageSet","args":"Voltage",
 	//cmddetail:"descr":"Measure the real voltage with an external, reliable power meter and enter this voltage via this command to calibrate. The calibration is automatically saved in the flash memory.",
@@ -95,6 +112,11 @@ void PwrCal_Init(pwr_cal_type_t type, float default_voltage_cal,
 	//cmddetail:"fn":"CalibrateCurrent","file":"driver/drv_pwrCal.c","requires":"",
 	//cmddetail:"examples":""}
     CMD_RegisterCommand("CurrentSet", CalibrateCurrent, NULL);
+	//cmddetail:{"name":"CurrentZero","args":"",
+	//cmddetail:"descr":"Call this with NO load connected (or only negligible load) to capture the current noise-floor/offset and subtract it from all future readings. Run this BEFORE CurrentSet, or re-run CurrentSet afterwards if gain drifts.",
+	//cmddetail:"fn":"CalibrateCurrentZero","file":"driver/drv_pwrCal.c","requires":"",
+	//cmddetail:"examples":""}
+    CMD_RegisterCommand("CurrentZero", CalibrateCurrentZero, NULL);
 	//cmddetail:{"name":"PowerSet","args":"Power",
 	//cmddetail:"descr":"Measure the real Power with an external, reliable power meter and enter this Power via this command to calibrate. The calibration is automatically saved in the flash memory.",
 	//cmddetail:"fn":"CalibratePower","file":"driver/drv_pwrCal.c","requires":"",
@@ -109,7 +131,7 @@ void PwrCal_Scale(int raw_voltage, float raw_current, int raw_power,
     latest_raw_power = raw_power;
 
     *real_voltage = Scale(raw_voltage, voltage_cal);
-    *real_current = Scale(raw_current, current_cal);
+    *real_current = Scale(raw_current - current_offset_raw, current_cal);
     *real_power = Scale(raw_power, power_cal);
 }
 
