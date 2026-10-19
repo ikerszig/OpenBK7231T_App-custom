@@ -199,8 +199,12 @@ void BL09XX_AppendInformationToHTTPIndexPage(http_request_t * request, int bPreS
       float v = sensdataset->sensors[OBK_VOLTAGE].lastReading;
       float w = sensdataset->sensors[OBK_POWER].lastReading;
       if (v > 0.1f) {
+        float calc_current = w / v;
         poststr(request, "<tr><td><b>Current (calc P/V)</b></td><td style='text-align: right;'>");
-        hprintf255(request, "%.3f</td><td>A</td></tr>", w / v);
+        hprintf255(request, "%.3f</td><td>A</td></tr>", calc_current);
+        MQTT_PublishMain_StringFloat(
+          asensdatasetix == BL_SENSORS_IX_0 ? "current_calc_pv" : "current_calc_pv_b",
+          calc_current, 3, OBK_PUBLISH_FLAG_QOS_ZERO);
       }
     }
     poststr(request, "</table>");
