@@ -191,6 +191,18 @@ void BL09XX_AppendInformationToHTTPIndexPage(http_request_t * request, int bPreS
 		}
 	};
 
+    // DIAGNOSTIC (2026-10-19): computed current from P/V (assumes PF=1),
+    // to compare against the directly-measured Current row above and see
+    // whether the raw current channel diverges from the power channel at
+    // low loads.
+    {
+      float v = sensdataset->sensors[OBK_VOLTAGE].lastReading;
+      float w = sensdataset->sensors[OBK_POWER].lastReading;
+      if (v > 0.1f) {
+        poststr(request, "<tr><td><b>Current (calc P/V)</b></td><td style='text-align: right;'>");
+        hprintf255(request, "%.3f</td><td>A</td></tr>", w / v);
+      }
+    }
     poststr(request, "</table>");
 
     hprintf255(request, "(changes sent %i, skipped %i, saved %li) - %s<hr>",
