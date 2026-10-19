@@ -16,6 +16,8 @@
 #include "drv_pwrCal.h"
 #include "drv_spi.h"
 #include "drv_uart.h"
+#include "../hal/hal_pins.h"
+#include "../hal/hal_generic.h"
 
 static unsigned short bl0942_baudRate = 4800;
 #if ENABLE_BL_TWIN
@@ -31,12 +33,17 @@ static unsigned short bl0942_opts= 0;
 
 #define BL0942_UART_RECEIVE_BUFFER_SIZE 256
 #define BL0942_UART_ADDR 0 // 0 - 3
-// Our device has 2 physical BL0942 chips sharing ONE UART bus (UART1),
-// distinguished by IC address (datasheet: A2_NCS/A1 pins, TSSOP14 only).
-// Device index 1 is queried at address BL0942_UART_ADDR_SHARED_1 on the
-// SAME physical port as device index 0, instead of a second real UART.
-#define BL0942_UART_ADDR_SHARED_1 3
-#define BL0942_UART_ADDR_FOR(dev) ((dev) == BL0942_DEVICE_INDEX_1 ? BL0942_UART_ADDR_SHARED_1 : BL0942_UART_ADDR)
+// Confirmed by continuity check (2026-10-19): this board's 2 physical
+// BL0942 chips share ONE RX line back to the SoC (P10/UART1 RX) - both
+// chips' TX pins are tied together. Each chip has its OWN rx input
+// though: chip 1 = P11 (the normal hardware UART1 TX), chip 2 = P24
+// (a plain GPIO, bit-banged as a software UART TX - see
+// BL0942_SoftUART_SendByte). They are NOT distinguished by an address
+// byte - both are queried at the same default address 0, and only ONE
+// of them is ever addressed (via its own rx pin) at a time, so only it
+// replies on the shared rx line.
+#define BL0942_UART_ADDR_FOR(dev) (BL0942_UART_ADDR)
+#define BL0942_SHARED_RX_P24_PIN 24
 #define BL0942_UART_CMD_READ(addr) (0x58 | addr)
 #define BL0942_UART_CMD_WRITE(addr) (0xA8 | addr)
 #define BL0942_UART_REG_PACKET 0xAA
@@ -372,48 +379,80 @@ void BL0942_UART_Init(void) {
       BL0942_UART_InitEx(UART_PORT_INDEX_0);
     }
     if (bl0942_opts & BL0942_OPTBIT1_UART2) {
-      BL0942_UART_InitEx(UART_PORT_INDEX_1);
+      // Chip 2's rx line is just a plain GPIO we bit-bang as a tx-only
+      // software UART - its response comes back on the SAME physical
+      // rx wire as chip 1 (P10/UART1 rx), so there is no separate port
+      // to initialize here, only the GPIO itself.
+      HAL_PIN_Setup_Output(BL0942_SHARED_RX_P24_PIN);
+      HAL_PIN_SetOutputValue(BL0942_SHARED_RX_P24_PIN, 1); // idle high
     }
   }
 }
 #endif
 
 #if ENABLE_BL_TWIN
-void BL0942_UART_RunEverySecondEx(int adeviceindex, int auartindex) {
-  BL0942_UART_TryToGetNextPacket(adeviceindex, auartindex);
-
-  UART_InitUARTEx(auartindex, bl0942_baudRate, 0, false);
-  UART_SendByteEx(auartindex, BL0942_UART_CMD_READ(BL0942_UART_ADDR_FOR(adeviceindex)));
-  UART_SendByteEx(auartindex, BL0942_UART_REG_PACKET);
+// Bit-banged (software) UART tx, idle-high, 8N1, LSB first - used to
+// query the 2nd BL0942 chip on P24. Must never run while we are also
+// expecting/parsing a response from the OTHER chip, since both chips'
+// tx pins are tied together into one shared rx line - see
+// BL0942_UART_RunEverySecond, which strictly alternates which chip is
+// queried so their responses on the shared line never overlap.
+static void BL0942_SoftUART_SendByte(int pin, uint8_t b, int bitTimeUs) {
+  int i;
+  HAL_PIN_SetOutputValue(pin, 0); // start bit
+  HAL_Delay_us(bitTimeUs);
+  for (i = 0; i < 8; i++) {
+    HAL_PIN_SetOutputValue(pin, (b >> i) & 1);
+    HAL_Delay_us(bitTimeUs);
+  }
+  HAL_PIN_SetOutputValue(pin, 1); // stop bit
+  HAL_Delay_us(bitTimeUs);
 }
+
+// Which device's response we expect to parse THIS tick (i.e. which one
+// we queried on the PREVIOUS tick). Alternates between the two chips
+// every tick so they never both reply on the shared rx line at once.
+static int bl0942_shared_pending_device = BL0942_DEVICE_INDEX_0;
 
 void BL0942_UART_RunEverySecond(void) {
+  int next_device;
+
   if (!bl0942_opts) {
     int fuartindex = UART_GetSelectedPortIndex();
-    BL0942_UART_RunEverySecondEx(BL0942_DEVICE_INDEX_0, fuartindex);
+    BL0942_UART_TryToGetNextPacket(BL0942_DEVICE_INDEX_0, fuartindex);
+    UART_InitUARTEx(fuartindex, bl0942_baudRate, 0, false);
+    UART_SendByteEx(fuartindex, BL0942_UART_CMD_READ(BL0942_UART_ADDR));
+    UART_SendByteEx(fuartindex, BL0942_UART_REG_PACKET);
+    return;
   }
-  else {
-    if (bl0942_opts & BL0942_OPTBIT0_UART1) {
-      BL0942_UART_RunEverySecondEx(BL0942_DEVICE_INDEX_0, UART_PORT_INDEX_0);
-    }
-    if (bl0942_opts & BL0942_OPTBIT1_UART2) {
-      BL0942_UART_RunEverySecondEx(BL0942_DEVICE_INDEX_1, UART_PORT_INDEX_1);
-    }
-  }
-}
 
-// Quick-tick poll: manually drain each active port's hardware RX FIFO.
-// Workaround for the UART2 RX-interrupt reliability bug (see comment on
-// HAL_UART_PollEx). Runs far more often than the once-a-second request
-// tick, so bytes that arrived but were missed by the interrupt still
-// end up in the ring buffer before BL0942_UART_RunEverySecondEx reads it.
-void BL0942_RunQuickTick(void) {
-  if (bl0942_opts & BL0942_OPTBIT0_UART1) {
-    UART_PollEx(UART_PORT_INDEX_0);
+  // Parse whatever arrived on the shared rx line in response to
+  // whichever chip we queried last tick.
+  BL0942_UART_TryToGetNextPacket(bl0942_shared_pending_device, UART_PORT_INDEX_0);
+
+  // Decide which chip to query THIS tick - alternate if both are
+  // enabled, otherwise always the one that is.
+  next_device = bl0942_shared_pending_device;
+  if ((bl0942_opts & (BL0942_OPTBIT0_UART1 | BL0942_OPTBIT1_UART2)) ==
+      (BL0942_OPTBIT0_UART1 | BL0942_OPTBIT1_UART2)) {
+    next_device = (bl0942_shared_pending_device == BL0942_DEVICE_INDEX_0)
+                    ? BL0942_DEVICE_INDEX_1 : BL0942_DEVICE_INDEX_0;
+  } else if (bl0942_opts & BL0942_OPTBIT0_UART1) {
+    next_device = BL0942_DEVICE_INDEX_0;
+  } else if (bl0942_opts & BL0942_OPTBIT1_UART2) {
+    next_device = BL0942_DEVICE_INDEX_1;
   }
-  if (bl0942_opts & BL0942_OPTBIT1_UART2) {
-    UART_PollEx(UART_PORT_INDEX_1);
+
+  if (next_device == BL0942_DEVICE_INDEX_0) {
+    UART_InitUARTEx(UART_PORT_INDEX_0, bl0942_baudRate, 0, false);
+    UART_SendByteEx(UART_PORT_INDEX_0, BL0942_UART_CMD_READ(BL0942_UART_ADDR));
+    UART_SendByteEx(UART_PORT_INDEX_0, BL0942_UART_REG_PACKET);
+  } else {
+    int bitUs = 1000000 / bl0942_baudRate;
+    BL0942_SoftUART_SendByte(BL0942_SHARED_RX_P24_PIN, BL0942_UART_CMD_READ(BL0942_UART_ADDR), bitUs);
+    BL0942_SoftUART_SendByte(BL0942_SHARED_RX_P24_PIN, BL0942_UART_REG_PACKET, bitUs);
   }
+  bl0942_shared_pending_device = next_device;
 }
 #else
 void BL0942_UART_RunEverySecond(void) {
