@@ -5,6 +5,7 @@
 #include "../logging/logging.h"
 #include "../new_cfg.h"
 #include "../new_pins.h"
+#include "../mqtt/new_mqtt.h"
 
 static pwr_cal_type_t cal_type;
 
@@ -25,6 +26,23 @@ static float latest_raw_current;
 static int latest_raw_power;
 
 //#define PWRCAL_DEBUG
+
+// 2026-10-20: publish the 4 calibration constants to MQTT (retained) so
+// HA keeps a history of WHEN they change - without this, a future
+// recalibration is only remembered if a human manually logs it
+// (kalibracio_rogzit.py), which is exactly the kind of thing that gets
+// forgotten. Retained so a fresh HA subscription also sees the current
+// value immediately, not just future changes.
+static void PublishCalTopic(int cfg_index, float value) {
+    const char *topic;
+    if (cfg_index == CFG_OBK_VOLTAGE) topic = "calibration_voltage";
+    else if (cfg_index == CFG_OBK_CURRENT) topic = "calibration_current";
+    else if (cfg_index == CFG_OBK_POWER) topic = "calibration_power";
+    else if (cfg_index == CFG_OBK_CURRENT_OFFSET) topic = "calibration_current_offset";
+    else return;
+    MQTT_PublishMain_StringFloat(topic, value, 6,
+        OBK_PUBLISH_FLAG_RETAIN | OBK_PUBLISH_FLAG_QOS_ZERO);
+}
 
 static commandResult_t Calibrate(const char *cmd, const char *args, float raw,
                                  float *cal, int cfg_index) {
@@ -53,6 +71,7 @@ static commandResult_t Calibrate(const char *cmd, const char *args, float raw,
         return CMD_RES_ERROR;
     }
     CFG_SetPowerMeasurementCalibrationFloat(cfg_index, *cal);
+    PublishCalTopic(cfg_index, *cal);
 
 #ifdef PWRCAL_DEBUG
     ADDLOG_INFO(LOG_FEATURE_ENERGYMETER, "%s: you gave %f, set ref to %f",
@@ -77,6 +96,7 @@ static commandResult_t CalibrateCurrentZero(const void *context, const char *cmd
                                         const char *args, int cmdFlags) {
     current_offset_raw = latest_raw_current;
     CFG_SetPowerMeasurementCalibrationFloat(CFG_OBK_CURRENT_OFFSET, current_offset_raw);
+    PublishCalTopic(CFG_OBK_CURRENT_OFFSET, current_offset_raw);
     ADDLOG_INFO(LOG_FEATURE_ENERGYMETER, "CurrentZero: offset set to %f (raw)", current_offset_raw);
     return CMD_RES_OK;
 }
@@ -102,6 +122,14 @@ void PwrCal_Init(pwr_cal_type_t type, float default_voltage_cal,
                                                         default_power_cal);
     current_offset_raw = CFG_GetPowerMeasurementCalibrationFloat(CFG_OBK_CURRENT_OFFSET, 0);
 
+    // Publish the boot-time baseline too, not just future changes - a
+    // fresh HA install, or one that missed the retained message, still
+    // needs to see what's currently configured.
+    PublishCalTopic(CFG_OBK_VOLTAGE, voltage_cal);
+    PublishCalTopic(CFG_OBK_CURRENT, current_cal);
+    PublishCalTopic(CFG_OBK_POWER, power_cal);
+    PublishCalTopic(CFG_OBK_CURRENT_OFFSET, current_offset_raw);
+
 	//cmddetail:{"name":"VoltageSet","args":"Voltage",
 	//cmddetail:"descr":"Measure the real voltage with an external, reliable power meter and enter this voltage via this command to calibrate. The calibration is automatically saved in the flash memory.",
 	//cmddetail:"fn":"CalibrateVoltage","file":"driver/drv_pwrCal.c","requires":"",
@@ -122,6 +150,19 @@ void PwrCal_Init(pwr_cal_type_t type, float default_voltage_cal,
 	//cmddetail:"fn":"CalibratePower","file":"driver/drv_pwrCal.c","requires":"",
 	//cmddetail:"examples":""}
     CMD_RegisterCommand("PowerSet", CalibratePower, NULL);
+}
+
+void PwrCal_PublishPeriodic(void) {
+    // Every ~60s - cheap (4 small retained publishes), and guarantees
+    // delivery regardless of exactly when MQTT connected after boot.
+    static int ticks = 0;
+    ticks++;
+    if (ticks < 60) return;
+    ticks = 0;
+    PublishCalTopic(CFG_OBK_VOLTAGE, voltage_cal);
+    PublishCalTopic(CFG_OBK_CURRENT, current_cal);
+    PublishCalTopic(CFG_OBK_POWER, power_cal);
+    PublishCalTopic(CFG_OBK_CURRENT_OFFSET, current_offset_raw);
 }
 
 void PwrCal_Scale(int raw_voltage, float raw_current, int raw_power,

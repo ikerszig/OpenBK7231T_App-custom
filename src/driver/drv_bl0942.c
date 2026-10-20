@@ -431,6 +431,8 @@ static int bl0942_shared_pending_device = BL0942_DEVICE_INDEX_0;
 void BL0942_UART_RunEverySecond(void) {
   int next_device;
 
+  PwrCal_PublishPeriodic();
+
   if (!bl0942_opts) {
     int fuartindex = UART_GetSelectedPortIndex();
     BL0942_UART_TryToGetNextPacket(BL0942_DEVICE_INDEX_0, fuartindex);
