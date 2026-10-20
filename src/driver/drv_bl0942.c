@@ -89,6 +89,8 @@ static uint32_t PrevCfCnt[2] = {CF_CNT_INVALID, CF_CNT_INVALID};
 static uint32_t PrevCfCnt[1] = {CF_CNT_INVALID};
 #endif
 
+#define BL0942_MAX_PLAUSIBLE_ENERGY_WH_PER_TICK 20.0f
+
 static int32_t Int24ToInt32(int32_t val) {
     return (val & (1 << 23) ? val | (0xFF << 24) : val);
 }
@@ -112,6 +114,18 @@ static void ScaleAndUpdate(bl0942_data_t * data) {
         : data->cf_cnt - PrevCfCnt[adeviceindex]);
       energyWh =
         fabsf(PwrCal_ScalePowerOnly(diff)) * 1638.4f * 256.0f / 3600.0f;
+      // Sanity clamp (2026-10-20): a single corrupted cf_cnt read on the
+      // shared-RX line can by chance pass the BL0942 checksum and produce
+      // an absurd one-tick diff (seen live: +15624 kWh in ~90s). The
+      // installation's fuse is 25A (~5.75kW @230V); even with a generous
+      // margin for slow/doubled tick intervals, no single tick can
+      // legitimately represent more than ~20 Wh. Discard, don't integrate.
+      if (energyWh > BL0942_MAX_PLAUSIBLE_ENERGY_WH_PER_TICK) {
+        ADDLOG_WARN(LOG_FEATURE_ENERGYMETER,
+          "BL0942 dev %i: implausible energyWh %f discarded (cf_cnt diff %i)",
+          adeviceindex, energyWh, diff);
+        energyWh = 0;
+      }
     }
     PrevCfCnt[adeviceindex] = data->cf_cnt;
 #if ENABLE_BL_TWIN

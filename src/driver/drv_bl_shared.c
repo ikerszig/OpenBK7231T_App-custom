@@ -72,41 +72,41 @@ typedef struct {
 energysensdataset_t datasetlist[BL_SENSDATASETS_COUNT] = {
   { {
   //.hass_dev_class, 	.units,		.name_friendly,			.name_mqtt,		 .hass_uniq_id_suffix, .rounding_decimals, .changeSendThreshold		
-	  {{"voltage",		"V",		"Voltage",				"voltage",					"0",		},  1,			0.25,		},	// OBK_VOLTAGE
-	  {{"current",		"A",		"Current",				"current",					"1",		},	3,			0.002,		},	// OBK_CURRENT
-	  {{"power",			"W",		"Power",				"power",					"2",		},	2,			0.25,		},	// OBK_POWER
-	  {{"frequency",			"Hz",		"Frequency",				"138",					"138",		},	2,			0.02,		},	// OBK_FREQUENCY - SPECIAL_CHANNEL_OBK_FREQUENCY is 138
-	  {{"apparent_power",	"VA",		"Apparent Power",		"power_apparent",			"9",		},	2,			0.25,		},	// OBK_POWER_APPARENT
-	  {{"reactive_power",	"var",		"Reactive Power",		"power_reactive",			"10",		},	2,			0.25,		},	// OBK_POWER_REACTIVE
-	  {{"power_factor",	"",			"Power Factor",			"power_factor",				"11",		},	2,			0.05,		},	// OBK_POWER_FACTOR
-	  {{"energy",			UNIT_WH,	"Energy Total",			"energycounter",			"3",		},	3,			0.1,		},	// OBK_CONSUMPTION_TOTAL
-	  {{"energy",			UNIT_WH,	"Energy Last Hour",		"energycounter_last_hour",	"4",		},	3,			0.1,		},	// OBK_CONSUMPTION_LAST_HOUR
+	  {{"voltage",		"V",		"Nappali Voltage",				"voltage",					"0",		},  1,			0.25,		},	// OBK_VOLTAGE
+	  {{"current",		"A",		"Nappali Current",				"current",					"1",		},	3,			0.002,		},	// OBK_CURRENT
+	  {{"power",			"W",		"Nappali Power",				"power",					"2",		},	2,			0.25,		},	// OBK_POWER
+	  {{"frequency",			"Hz",		"Nappali Frequency",				"138",					"138",		},	2,			0.02,		},	// OBK_FREQUENCY - SPECIAL_CHANNEL_OBK_FREQUENCY is 138
+	  {{"apparent_power",	"VA",		"Nappali Apparent Power",		"power_apparent",			"9",		},	2,			0.25,		},	// OBK_POWER_APPARENT
+	  {{"reactive_power",	"var",		"Nappali Reactive Power",		"power_reactive",			"10",		},	2,			0.25,		},	// OBK_POWER_REACTIVE
+	  {{"power_factor",	"",			"Nappali Power Factor",			"power_factor",				"11",		},	2,			0.05,		},	// OBK_POWER_FACTOR
+	  {{"energy",			UNIT_WH,	"Nappali Energy Total",			"energycounter",			"3",		},	3,			0.1,		},	// OBK_CONSUMPTION_TOTAL
+	  {{"energy",			UNIT_WH,	"Nappali Energy Last Hour",		"energycounter_last_hour",	"4",		},	3,			0.1,		},	// OBK_CONSUMPTION_LAST_HOUR
 	  //{{"",				"",			"Consumption Stats",	"consumption_stats",		"5",		},	0,			0,			},	// OBK_CONSUMPTION_STATS
-	  {{"energy",			UNIT_WH,	"Energy Today",			"energycounter_today",		"7",		},	3,			0.1,		},	// OBK_CONSUMPTION_TODAY
-	  {{"energy",			UNIT_WH,	"Energy Yesterday",		"energycounter_yesterday",	"6",		},	3,			0.1,		},	// OBK_CONSUMPTION_YESTERDAY
-	  {{"energy",			UNIT_WH,	"Energy 2 Days Ago",	"energycounter_2_days_ago",	"12",		},	3,			0.1,		},	// OBK_CONSUMPTION_2_DAYS_AGO
-	  {{"energy",			UNIT_WH,	"Energy 3 Days Ago",	"energycounter_3_days_ago",	"13",		},	3,			0.1,		},	// OBK_CONSUMPTION_3_DAYS_AGO
-	  {{"timestamp",		"",			"Energy Clear Date",	"energycounter_clear_date",	"8",		},	0,			86400,		},	// OBK_CONSUMPTION_CLEAR_DATE	
+	  {{"energy",			UNIT_WH,	"Nappali Energy Today",			"energycounter_today",		"7",		},	3,			0.1,		},	// OBK_CONSUMPTION_TODAY
+	  {{"energy",			UNIT_WH,	"Nappali Energy Yesterday",		"energycounter_yesterday",	"6",		},	3,			0.1,		},	// OBK_CONSUMPTION_YESTERDAY
+	  {{"energy",			UNIT_WH,	"Nappali Energy 2 Days Ago",	"energycounter_2_days_ago",	"12",		},	3,			0.1,		},	// OBK_CONSUMPTION_2_DAYS_AGO
+	  {{"energy",			UNIT_WH,	"Nappali Energy 3 Days Ago",	"energycounter_3_days_ago",	"13",		},	3,			0.1,		},	// OBK_CONSUMPTION_3_DAYS_AGO
+	  {{"timestamp",		"",			"Nappali Energy Clear Date",	"energycounter_clear_date",	"8",		},	0,			86400,		},	// OBK_CONSUMPTION_CLEAR_DATE	
     } }
 #if BL_SENSDATASETS_COUNT==2
 ,
    { {
        //.hass_dev_class, 	.units,		.name_friendly,			.name_mqtt,		 .hass_uniq_id_suffix, .rounding_decimals, .changeSendThreshold		
-    {{"voltage",		"V",		"Voltage B",				"voltage_b",					"b_0",		},  1,			0.25,		},	// OBK_VOLTAGE
-    {{"current",		"A",		"Current B",				"current_b",					"b_1",		},	3,			0.002,		},	// OBK_CURRENT
-    {{"power",			"W",		"Power B",				"power_b",					"b_2",		},	2,			0.25,		},	// OBK_POWER
-    {{"frequency",			"Hz",		"Frequency B",				"frequency_b",					"b_138",		},	2,			0.02,		},	// OBK_FREQUENCY
-    {{"apparent_power",	"VA",		"Apparent Power B",		"power_apparent_b",			"b_9",		},	2,			0.25,		},	// OBK_POWER_APPARENT
-    {{"reactive_power",	"var",		"Reactive Power B",		"power_reactive_b",			"b_10",		},	2,			0.25,		},	// OBK_POWER_REACTIVE
-    {{"power_factor",	"",			"Power Factor B",			"power_factor_b",				"b_11",		},	2,			0.05,		},	// OBK_POWER_FACTOR
-    {{"energy",			UNIT_WH,	"Energy Total B",			"energycounter_b",			"b_3",		},	3,			0.1,		},	// OBK_CONSUMPTION_TOTAL
-    {{"energy",			UNIT_WH,	"Energy Last Hour B",		"energycounter_last_hour_b",	"b_4",		},	3,			0.1,		},	// OBK_CONSUMPTION_LAST_HOUR
+    {{"voltage",		"V",		"Lakas teljes Voltage",				"voltage_b",					"b_0",		},  1,			0.25,		},	// OBK_VOLTAGE
+    {{"current",		"A",		"Lakas teljes Current",				"current_b",					"b_1",		},	3,			0.002,		},	// OBK_CURRENT
+    {{"power",			"W",		"Lakas teljes Power",				"power_b",					"b_2",		},	2,			0.25,		},	// OBK_POWER
+    {{"frequency",			"Hz",		"Lakas teljes Frequency",				"frequency_b",					"b_138",		},	2,			0.02,		},	// OBK_FREQUENCY
+    {{"apparent_power",	"VA",		"Lakas teljes Apparent Power",		"power_apparent_b",			"b_9",		},	2,			0.25,		},	// OBK_POWER_APPARENT
+    {{"reactive_power",	"var",		"Lakas teljes Reactive Power",		"power_reactive_b",			"b_10",		},	2,			0.25,		},	// OBK_POWER_REACTIVE
+    {{"power_factor",	"",			"Lakas teljes Power Factor",			"power_factor_b",				"b_11",		},	2,			0.05,		},	// OBK_POWER_FACTOR
+    {{"energy",			UNIT_WH,	"Lakas teljes Energy Total",			"energycounter_b",			"b_3",		},	3,			0.1,		},	// OBK_CONSUMPTION_TOTAL
+    {{"energy",			UNIT_WH,	"Lakas teljes Energy Last Hour",		"energycounter_last_hour_b",	"b_4",		},	3,			0.1,		},	// OBK_CONSUMPTION_LAST_HOUR
     //{{"",				"",			"Consumption Stats B",	"consumption_stats_b",		"b_5",		},	0,			0,			},	// OBK_CONSUMPTION_STATS
-    {{"energy",			UNIT_WH,	"Energy Today B",			"energycounter_today_b",		"b_7",		},	3,			0.1,		},	// OBK_CONSUMPTION_TODAY
-    {{"energy",			UNIT_WH,	"Energy Yesterday B",		"energycounter_yesterday_b",	"b_6",		},	3,			0.1,		},	// OBK_CONSUMPTION_YESTERDAY
-    {{"energy",			UNIT_WH,	"Energy 2 Days Ago B",	"energycounter_2_days_ago_b",	"b_12",		},	3,			0.1,		},	// OBK_CONSUMPTION_2_DAYS_AGO
-    {{"energy",			UNIT_WH,	"Energy 3 Days Ago B",	"energycounter_3_days_ago_b",	"b_13",		},	3,			0.1,		},	// OBK_CONSUMPTION_3_DAYS_AGO
-    {{"timestamp",		"",			"Energy Clear Date B",	"energycounter_clear_date_b",	"b_8",		},	0,			86400,		},	// OBK_CONSUMPTION_CLEAR_DATE	
+    {{"energy",			UNIT_WH,	"Lakas teljes Energy Today",			"energycounter_today_b",		"b_7",		},	3,			0.1,		},	// OBK_CONSUMPTION_TODAY
+    {{"energy",			UNIT_WH,	"Lakas teljes Energy Yesterday",		"energycounter_yesterday_b",	"b_6",		},	3,			0.1,		},	// OBK_CONSUMPTION_YESTERDAY
+    {{"energy",			UNIT_WH,	"Lakas teljes Energy 2 Days Ago",	"energycounter_2_days_ago_b",	"b_12",		},	3,			0.1,		},	// OBK_CONSUMPTION_2_DAYS_AGO
+    {{"energy",			UNIT_WH,	"Lakas teljes Energy 3 Days Ago",	"energycounter_3_days_ago_b",	"b_13",		},	3,			0.1,		},	// OBK_CONSUMPTION_3_DAYS_AGO
+    {{"timestamp",		"",			"Lakas teljes Energy Clear Date",	"energycounter_clear_date_b",	"b_8",		},	0,			86400,		},	// OBK_CONSUMPTION_CLEAR_DATE	
      } }
 #endif
 };
