@@ -106,6 +106,36 @@ static commandResult_t CalibratePower(const void *context, const char *cmd,
     return Calibrate(cmd, args, latest_raw_power, &power_cal, CFG_OBK_POWER);
 }
 
+// PowerSet/CurrentSet/VoltageSet mind az aktuális nyers ertekhez (egy
+// PILLANATNYI, akar masodperceken belul ingadozo terheleshez) viszonyitanak -
+// ez a lakas-osszfogyasztasnal (CH2) megbizhatatlan pivot egy kis (<1%)
+// finomitashoz, mert (1) a terheles sajat maga is percek/masodpercek alatt
+// jelentosen valtozhat, es (2) a "latest_raw_power" megosztott valtozo,
+// amit a ket csatorna VALTVA ir felul - igy sosem biztos, melyik csatorna
+// nyers erteket kapnank el. Ez a parancs ehelyett a MAR BEALLITOTT
+// power_cal konstanst szorozza egy pontosan megadott arannyal - fuggetlen
+// az aktualis terhelestol es attol, melyik csatorna irta utoljara a
+// latest_raw_power-t.
+static commandResult_t CalibratePowerScale(const void *context, const char *cmd,
+                                      const char *args, int cmdFlags) {
+    Tokenizer_TokenizeString(args, 0);
+    if (Tokenizer_CheckArgsCountAndPrintWarning(cmd, 1)) {
+        return CMD_RES_NOT_ENOUGH_ARGUMENTS;
+    }
+    float factor = Tokenizer_GetArgFloat(0);
+    if (factor <= 0.0f || isnan(factor)) {
+        ADDLOG_ERROR(LOG_FEATURE_ENERGYMETER, "%s",
+                     CMD_GetResultString(CMD_RES_BAD_ARGUMENT));
+        return CMD_RES_BAD_ARGUMENT;
+    }
+    power_cal *= factor;
+    CFG_SetPowerMeasurementCalibrationFloat(CFG_OBK_POWER, power_cal);
+    PublishCalTopic(CFG_OBK_POWER, power_cal);
+    ADDLOG_INFO(LOG_FEATURE_ENERGYMETER, "PowerCalScale: factor %f, new power_cal = %f",
+                factor, power_cal);
+    return CMD_RES_OK;
+}
+
 static float Scale(float raw, float cal) {
     return (cal_type == PWR_CAL_MULTIPLY ? raw * cal : raw / cal);
 }
@@ -150,6 +180,11 @@ void PwrCal_Init(pwr_cal_type_t type, float default_voltage_cal,
 	//cmddetail:"fn":"CalibratePower","file":"driver/drv_pwrCal.c","requires":"",
 	//cmddetail:"examples":""}
     CMD_RegisterCommand("PowerSet", CalibratePower, NULL);
+	//cmddetail:{"name":"PowerCalScale","args":"Factor",
+	//cmddetail:"descr":"Multiply the EXISTING power calibration constant by the given exact factor, independent of the current live reading. Use this for a small, known correction (e.g. derived from a long-period official-meter comparison) where PowerSet's live-load pivot would be unreliable (load not stable, or shared twin-channel raw value).",
+	//cmddetail:"fn":"CalibratePowerScale","file":"driver/drv_pwrCal.c","requires":"",
+	//cmddetail:"examples":""}
+    CMD_RegisterCommand("PowerCalScale", CalibratePowerScale, NULL);
 }
 
 void PwrCal_PublishPeriodic(void) {
