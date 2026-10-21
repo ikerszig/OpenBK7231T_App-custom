@@ -25,6 +25,37 @@ static int latest_raw_voltage;
 static float latest_raw_current;
 static int latest_raw_power;
 
+// Piecewise-linear kis-terheleses Current korrekcios gorbe (2026-10-21).
+// A BL0942 kulon RMS-arammero utja kis (de nem nulla) terhelesnel torzit,
+// mig a Power-ut pontosnak tunik a teljes tartomanyban (l.
+// CB2S_OpenBeken_projekt_allapot.md 3. fejezet) - ezert ez a korrekcio
+// CSAK a kijelzett Current-et (es a belole szamolt latszolagos/meddo
+// teljesitmenyt) befolyasolja, a Power-t es az Energy Total-t (kWh,
+// szamlazas) NEM. A gorbe pontjait az aram_nemlinearitas_elemez.py
+// statisztikaja alapjan allitjuk - tisztan RAM-beli allapot, nincs ra
+// kulon flash-slot, a persistalast a /startup_command mezobe irt
+// CurrentCurvePoint hivas-sorozat adja (ugyanaz a minta, mint a BL0942opts
+// inditasi parancs). Alapertelmezetten ures (nincs korrekcio, szorzo=1).
+#define MAX_CURVE_POINTS 12
+static float curve_current[MAX_CURVE_POINTS];
+static float curve_mult[MAX_CURVE_POINTS];
+static int curve_n = 0;
+
+static float InterpolateCurrentMultiplier(float real_current) {
+    if (curve_n == 0) return 1.0f;
+    if (real_current <= curve_current[0]) return curve_mult[0];
+    if (real_current >= curve_current[curve_n - 1]) return curve_mult[curve_n - 1];
+    for (int i = 0; i < curve_n - 1; i++) {
+        if (real_current >= curve_current[i] && real_current <= curve_current[i + 1]) {
+            float span = curve_current[i + 1] - curve_current[i];
+            if (span <= 0.0f) return curve_mult[i];
+            float frac = (real_current - curve_current[i]) / span;
+            return curve_mult[i] + (curve_mult[i + 1] - curve_mult[i]) * frac;
+        }
+    }
+    return 1.0f;
+}
+
 //#define PWRCAL_DEBUG
 
 // 2026-10-20: publish the 4 calibration constants to MQTT (retained) so
@@ -136,6 +167,40 @@ static commandResult_t CalibratePowerScale(const void *context, const char *cmd,
     return CMD_RES_OK;
 }
 
+// CurrentCurvePoint <index> <aram> <szorzo> - beallitja/felulirja a
+// gorbe "index"-edik tortespontjat. A pontokat NOVEKVO aram-sorrendben
+// kell beallitani (0, 1, 2, ...) - az interpolacio ezt feltetelezi,
+// nem rendezi ujra. index 0..MAX_CURVE_POINTS-1.
+static commandResult_t CurrentCurvePointCmd(const void *context, const char *cmd,
+                                      const char *args, int cmdFlags) {
+    Tokenizer_TokenizeString(args, 0);
+    if (Tokenizer_CheckArgsCountAndPrintWarning(cmd, 3)) {
+        return CMD_RES_NOT_ENOUGH_ARGUMENTS;
+    }
+    int index = Tokenizer_GetArgInteger(0);
+    float current = Tokenizer_GetArgFloat(1);
+    float mult = Tokenizer_GetArgFloat(2);
+    if (index < 0 || index >= MAX_CURVE_POINTS || mult <= 0.0f || isnan(mult)) {
+        ADDLOG_ERROR(LOG_FEATURE_ENERGYMETER, "%s",
+                     CMD_GetResultString(CMD_RES_BAD_ARGUMENT));
+        return CMD_RES_BAD_ARGUMENT;
+    }
+    curve_current[index] = current;
+    curve_mult[index] = mult;
+    if (index + 1 > curve_n) curve_n = index + 1;
+    ADDLOG_INFO(LOG_FEATURE_ENERGYMETER,
+                "CurrentCurvePoint: [%d] = (%f A, x%f), curve_n=%d",
+                index, current, mult, curve_n);
+    return CMD_RES_OK;
+}
+
+static commandResult_t CurrentCurveClearCmd(const void *context, const char *cmd,
+                                      const char *args, int cmdFlags) {
+    curve_n = 0;
+    ADDLOG_INFO(LOG_FEATURE_ENERGYMETER, "%s", "CurrentCurveClear: korrekcios gorbe torolve");
+    return CMD_RES_OK;
+}
+
 static float Scale(float raw, float cal) {
     return (cal_type == PWR_CAL_MULTIPLY ? raw * cal : raw / cal);
 }
@@ -185,6 +250,16 @@ void PwrCal_Init(pwr_cal_type_t type, float default_voltage_cal,
 	//cmddetail:"fn":"CalibratePowerScale","file":"driver/drv_pwrCal.c","requires":"",
 	//cmddetail:"examples":""}
     CMD_RegisterCommand("PowerCalScale", CalibratePowerScale, NULL);
+	//cmddetail:{"name":"CurrentCurvePoint","args":"Index Current Multiplier",
+	//cmddetail:"descr":"Set one point (index, current in A, multiplier) of the piecewise-linear low-load Current correction curve. Points must be set in increasing-current order (index 0,1,2,...). Only affects the displayed Current (and apparent/reactive power derived from it) - Power and Energy Total are untouched.",
+	//cmddetail:"fn":"CurrentCurvePointCmd","file":"driver/drv_pwrCal.c","requires":"",
+	//cmddetail:"examples":""}
+    CMD_RegisterCommand("CurrentCurvePoint", CurrentCurvePointCmd, NULL);
+	//cmddetail:{"name":"CurrentCurveClear","args":"",
+	//cmddetail:"descr":"Clear the low-load Current correction curve (back to no correction, multiplier 1.0 everywhere).",
+	//cmddetail:"fn":"CurrentCurveClearCmd","file":"driver/drv_pwrCal.c","requires":"",
+	//cmddetail:"examples":""}
+    CMD_RegisterCommand("CurrentCurveClear", CurrentCurveClearCmd, NULL);
 }
 
 void PwrCal_PublishPeriodic(void) {
@@ -208,6 +283,7 @@ void PwrCal_Scale(int raw_voltage, float raw_current, int raw_power,
 
     *real_voltage = Scale(raw_voltage, voltage_cal);
     *real_current = Scale(raw_current - current_offset_raw, current_cal);
+    *real_current *= InterpolateCurrentMultiplier(*real_current);
     *real_power = Scale(raw_power, power_cal);
 }
 
