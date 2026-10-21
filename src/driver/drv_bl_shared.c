@@ -690,6 +690,15 @@ void BL_ProcessUpdate(float voltage, float current, float power,
       powf((float)sensdataset->sensors[OBK_POWER].lastReading, 2)));
   sensdataset->sensors[OBK_POWER_FACTOR].lastReading =
     (sensdataset->sensors[OBK_POWER_APPARENT].lastReading == 0 ? 1 : sensdataset->sensors[OBK_POWER].lastReading / sensdataset->sensors[OBK_POWER_APPARENT].lastReading);
+  // PF fizikailag sosem lehet 1-nel nagyobb. Apparent power = V * (mar a
+  // kis-terheleses Current-korrekcios gorbevel szorzott) Current - ha a
+  // gorbe egy adott pillanatban kicsit tullo, apparent kicsit power ala
+  // csuszhat, es PF>1 jonne ki. A reactive power ugyanerre az esetre mar
+  // eleve vedett (l. fentebb a sqrt elotti clamp) - ez itt a PF oldali,
+  // eddig hianyzo parja.
+  if (sensdataset->sensors[OBK_POWER_FACTOR].lastReading > 1.0f) {
+    sensdataset->sensors[OBK_POWER_FACTOR].lastReading = 1.0f;
+  }
 
 
   sensors_reciveddata[asensdatasetix] = 1;
