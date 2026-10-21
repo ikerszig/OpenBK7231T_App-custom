@@ -25,7 +25,8 @@ static int latest_raw_voltage;
 static float latest_raw_current;
 static int latest_raw_power;
 
-// Piecewise-linear kis-terheleses Current korrekcios gorbe (2026-10-21).
+// Piecewise-linear kis-terheleses Current korrekcios gorbe (2026-10-21,
+// csatorankentire bovitve 2026-10-21 kesobb ugyanaznap).
 // A BL0942 kulon RMS-arammero utja kis (de nem nulla) terhelesnel torzit,
 // mig a Power-ut pontosnak tunik a teljes tartomanyban (l.
 // CB2S_OpenBeken_projekt_allapot.md 3. fejezet) - ezert ez a korrekcio
@@ -36,21 +37,35 @@ static int latest_raw_power;
 // kulon flash-slot, a persistalast a /startup_command mezobe irt
 // CurrentCurvePoint hivas-sorozat adja (ugyanaz a minta, mint a BL0942opts
 // inditasi parancs). Alapertelmezetten ures (nincs korrekcio, szorzo=1).
+//
+// A ket fizikai BL0942 chip (device 0 = "Nappali"/klima, device 1 =
+// "Lakas teljes") kulon-kulon torzit (megerositve: egy kozos gorbe a
+// lakas 0.75-1.00A savjaban tartosan ~60%-os maradek hibat hagyott, mig
+// minden mas sav ~10% alatt volt) - ezert ket KULON gorbe-tomb van,
+// device-index szerint valasztva.
 #define MAX_CURVE_POINTS 12
-static float curve_current[MAX_CURVE_POINTS];
-static float curve_mult[MAX_CURVE_POINTS];
-static int curve_n = 0;
+#define CURVE_DEVICE_COUNT 2
+static float curve_current[CURVE_DEVICE_COUNT][MAX_CURVE_POINTS];
+static float curve_mult[CURVE_DEVICE_COUNT][MAX_CURVE_POINTS];
+static int curve_n[CURVE_DEVICE_COUNT] = {0, 0};
 
-static float InterpolateCurrentMultiplier(float real_current) {
-    if (curve_n == 0) return 1.0f;
-    if (real_current <= curve_current[0]) return curve_mult[0];
-    if (real_current >= curve_current[curve_n - 1]) return curve_mult[curve_n - 1];
-    for (int i = 0; i < curve_n - 1; i++) {
-        if (real_current >= curve_current[i] && real_current <= curve_current[i + 1]) {
-            float span = curve_current[i + 1] - curve_current[i];
-            if (span <= 0.0f) return curve_mult[i];
-            float frac = (real_current - curve_current[i]) / span;
-            return curve_mult[i] + (curve_mult[i + 1] - curve_mult[i]) * frac;
+static int ClampDevice(int device) {
+    if (device < 0 || device >= CURVE_DEVICE_COUNT) return 0;
+    return device;
+}
+
+static float InterpolateCurrentMultiplier(int device, float real_current) {
+    device = ClampDevice(device);
+    int n = curve_n[device];
+    if (n == 0) return 1.0f;
+    if (real_current <= curve_current[device][0]) return curve_mult[device][0];
+    if (real_current >= curve_current[device][n - 1]) return curve_mult[device][n - 1];
+    for (int i = 0; i < n - 1; i++) {
+        if (real_current >= curve_current[device][i] && real_current <= curve_current[device][i + 1]) {
+            float span = curve_current[device][i + 1] - curve_current[device][i];
+            if (span <= 0.0f) return curve_mult[device][i];
+            float frac = (real_current - curve_current[device][i]) / span;
+            return curve_mult[device][i] + (curve_mult[device][i + 1] - curve_mult[device][i]) * frac;
         }
     }
     return 1.0f;
@@ -167,37 +182,52 @@ static commandResult_t CalibratePowerScale(const void *context, const char *cmd,
     return CMD_RES_OK;
 }
 
-// CurrentCurvePoint <index> <aram> <szorzo> - beallitja/felulirja a
-// gorbe "index"-edik tortespontjat. A pontokat NOVEKVO aram-sorrendben
-// kell beallitani (0, 1, 2, ...) - az interpolacio ezt feltetelezi,
-// nem rendezi ujra. index 0..MAX_CURVE_POINTS-1.
+// CurrentCurvePoint <device> <index> <aram> <szorzo> - beallitja/felulirja
+// a "device" (0=Nappali/klima, 1=Lakas teljes) csatorna gorbejenek
+// "index"-edik tortespontjat. A pontokat NOVEKVO aram-sorrendben kell
+// beallitani (index 0, 1, 2, ...) csatorankent - az interpolacio ezt
+// feltetelezi, nem rendezi ujra. index 0..MAX_CURVE_POINTS-1.
 static commandResult_t CurrentCurvePointCmd(const void *context, const char *cmd,
                                       const char *args, int cmdFlags) {
     Tokenizer_TokenizeString(args, 0);
-    if (Tokenizer_CheckArgsCountAndPrintWarning(cmd, 3)) {
+    if (Tokenizer_CheckArgsCountAndPrintWarning(cmd, 4)) {
         return CMD_RES_NOT_ENOUGH_ARGUMENTS;
     }
-    int index = Tokenizer_GetArgInteger(0);
-    float current = Tokenizer_GetArgFloat(1);
-    float mult = Tokenizer_GetArgFloat(2);
-    if (index < 0 || index >= MAX_CURVE_POINTS || mult <= 0.0f || isnan(mult)) {
+    int device = Tokenizer_GetArgInteger(0);
+    int index = Tokenizer_GetArgInteger(1);
+    float current = Tokenizer_GetArgFloat(2);
+    float mult = Tokenizer_GetArgFloat(3);
+    if (device < 0 || device >= CURVE_DEVICE_COUNT || index < 0 ||
+        index >= MAX_CURVE_POINTS || mult <= 0.0f || isnan(mult)) {
         ADDLOG_ERROR(LOG_FEATURE_ENERGYMETER, "%s",
                      CMD_GetResultString(CMD_RES_BAD_ARGUMENT));
         return CMD_RES_BAD_ARGUMENT;
     }
-    curve_current[index] = current;
-    curve_mult[index] = mult;
-    if (index + 1 > curve_n) curve_n = index + 1;
+    curve_current[device][index] = current;
+    curve_mult[device][index] = mult;
+    if (index + 1 > curve_n[device]) curve_n[device] = index + 1;
     ADDLOG_INFO(LOG_FEATURE_ENERGYMETER,
-                "CurrentCurvePoint: [%d] = (%f A, x%f), curve_n=%d",
-                index, current, mult, curve_n);
+                "CurrentCurvePoint: dev %d [%d] = (%f A, x%f), curve_n=%d",
+                device, index, current, mult, curve_n[device]);
     return CMD_RES_OK;
 }
 
+// CurrentCurveClear <device> - torli a megadott csatorna gorbejet (vissza
+// "nincs korrekcio"-ra). A masik csatorna gorbeje erintetlen marad.
 static commandResult_t CurrentCurveClearCmd(const void *context, const char *cmd,
                                       const char *args, int cmdFlags) {
-    curve_n = 0;
-    ADDLOG_INFO(LOG_FEATURE_ENERGYMETER, "%s", "CurrentCurveClear: korrekcios gorbe torolve");
+    Tokenizer_TokenizeString(args, 0);
+    if (Tokenizer_CheckArgsCountAndPrintWarning(cmd, 1)) {
+        return CMD_RES_NOT_ENOUGH_ARGUMENTS;
+    }
+    int device = Tokenizer_GetArgInteger(0);
+    if (device < 0 || device >= CURVE_DEVICE_COUNT) {
+        ADDLOG_ERROR(LOG_FEATURE_ENERGYMETER, "%s",
+                     CMD_GetResultString(CMD_RES_BAD_ARGUMENT));
+        return CMD_RES_BAD_ARGUMENT;
+    }
+    curve_n[device] = 0;
+    ADDLOG_INFO(LOG_FEATURE_ENERGYMETER, "CurrentCurveClear: dev %d gorbeje torolve", device);
     return CMD_RES_OK;
 }
 
@@ -250,13 +280,13 @@ void PwrCal_Init(pwr_cal_type_t type, float default_voltage_cal,
 	//cmddetail:"fn":"CalibratePowerScale","file":"driver/drv_pwrCal.c","requires":"",
 	//cmddetail:"examples":""}
     CMD_RegisterCommand("PowerCalScale", CalibratePowerScale, NULL);
-	//cmddetail:{"name":"CurrentCurvePoint","args":"Index Current Multiplier",
-	//cmddetail:"descr":"Set one point (index, current in A, multiplier) of the piecewise-linear low-load Current correction curve. Points must be set in increasing-current order (index 0,1,2,...). Only affects the displayed Current (and apparent/reactive power derived from it) - Power and Energy Total are untouched.",
+	//cmddetail:{"name":"CurrentCurvePoint","args":"Device Index Current Multiplier",
+	//cmddetail:"descr":"Set one point (index, current in A, multiplier) of the piecewise-linear low-load Current correction curve FOR ONE DEVICE (0=primary/Nappali, 1=twin-mode secondary/Lakas - the two physical BL0942 chips can distort differently). Points must be set in increasing-current order per device (index 0,1,2,...). Only affects the displayed Current (and apparent/reactive power derived from it) - Power and Energy Total are untouched.",
 	//cmddetail:"fn":"CurrentCurvePointCmd","file":"driver/drv_pwrCal.c","requires":"",
 	//cmddetail:"examples":""}
     CMD_RegisterCommand("CurrentCurvePoint", CurrentCurvePointCmd, NULL);
-	//cmddetail:{"name":"CurrentCurveClear","args":"",
-	//cmddetail:"descr":"Clear the low-load Current correction curve (back to no correction, multiplier 1.0 everywhere).",
+	//cmddetail:{"name":"CurrentCurveClear","args":"Device",
+	//cmddetail:"descr":"Clear the low-load Current correction curve for the given device (0 or 1) - back to no correction, multiplier 1.0 everywhere for that device only.",
 	//cmddetail:"fn":"CurrentCurveClearCmd","file":"driver/drv_pwrCal.c","requires":"",
 	//cmddetail:"examples":""}
     CMD_RegisterCommand("CurrentCurveClear", CurrentCurveClearCmd, NULL);
@@ -275,7 +305,22 @@ void PwrCal_PublishPeriodic(void) {
     PublishCalTopic(CFG_OBK_CURRENT_OFFSET, current_offset_raw);
 }
 
+// Beltart/single-device driverek (bl0937, cse7766, rn8209) ezt hivjak,
+// device-index nelkul - ezek sosem twin-mode-ban futnak, a device 0
+// gorbejet hasznaljak (nincs masik csatorna, aminek kulon gorbe kellene).
 void PwrCal_Scale(int raw_voltage, float raw_current, int raw_power,
+                  float *real_voltage, float *real_current, float *real_power) {
+    PwrCal_ScaleForDevice(0, raw_voltage, raw_current, raw_power,
+                          real_voltage, real_current, real_power);
+}
+
+// A ket fizikai BL0942 chip (vagy barmely jovobeli twin-mode driver)
+// KULON Current-korrekcios gorbet hasznal - l. a fajl elejen levo
+// megjegyzest arrol, miert (a ket chip kulon-kulon torzit). A gain/offset
+// kalibracio (voltage_cal/current_cal/power_cal/current_offset_raw)
+// TOVABBRA IS kozos/globalis - csak a kis-terheleses korrekcios gorbe
+// csatorankenti.
+void PwrCal_ScaleForDevice(int device, int raw_voltage, float raw_current, int raw_power,
                   float *real_voltage, float *real_current, float *real_power) {
     latest_raw_voltage = raw_voltage;
     latest_raw_current = raw_current;
@@ -283,7 +328,7 @@ void PwrCal_Scale(int raw_voltage, float raw_current, int raw_power,
 
     *real_voltage = Scale(raw_voltage, voltage_cal);
     *real_current = Scale(raw_current - current_offset_raw, current_cal);
-    *real_current *= InterpolateCurrentMultiplier(*real_current);
+    *real_current *= InterpolateCurrentMultiplier(device, *real_current);
     *real_power = Scale(raw_power, power_cal);
 }
 

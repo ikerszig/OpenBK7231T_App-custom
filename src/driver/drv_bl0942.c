@@ -102,8 +102,8 @@ static void ScaleAndUpdate(bl0942_data_t * data) {
   int adeviceindex = BL0942_DEVICE_INDEX_0;
 #endif
   float voltage, current, power;
-    PwrCal_Scale(data->v_rms, data->i_rms, data->watt, &voltage, &current,
-                 &power);
+    PwrCal_ScaleForDevice(adeviceindex, data->v_rms, data->i_rms, data->watt,
+                 &voltage, &current, &power);
 
     float frequency = 2 * 500000.0f / data->freq;
 
