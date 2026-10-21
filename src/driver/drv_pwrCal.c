@@ -54,6 +54,30 @@ static int ClampDevice(int device) {
     return device;
 }
 
+// Ideiglenes (nem perzisztalt, alapertelmezetten KI) kapcsolo: ha BE van
+// kapcsolva, minden meresnel kipublikalja a NYERS (gain+offset kalibralt,
+// de a kis-terheleses gorbe ELOTTI) Current-et is, csatorankent kulon
+// topicra. Ezzel a korrekcios gorbe elesben maradhat (jo erteket mutat
+// a felhasznalonak), mialatt PARHUZAMOSAN tiszta, korrekcio-mentes
+// referencia-adat gyulik a HA-ban a gorbe pontosabb utanhangolasahoz -
+// nem kell visszafejteni a nyers erteket a mar alkalmazott korrekcion at.
+// Szandekosan NEM a /startup_command-ba valo, ideiglenes hangolasi
+// eszkoz ("amig beall a rendszer") - manualisan kapcsolando ki, ha mar
+// nem kell.
+static int publish_raw_current = 0;
+
+static commandResult_t CurrentRawPublishCmd(const void *context, const char *cmd,
+                                      const char *args, int cmdFlags) {
+    Tokenizer_TokenizeString(args, 0);
+    if (Tokenizer_CheckArgsCountAndPrintWarning(cmd, 1)) {
+        return CMD_RES_NOT_ENOUGH_ARGUMENTS;
+    }
+    publish_raw_current = (Tokenizer_GetArgInteger(0) != 0);
+    ADDLOG_INFO(LOG_FEATURE_ENERGYMETER, "CurrentRawPublish: %s",
+                publish_raw_current ? "ON" : "OFF");
+    return CMD_RES_OK;
+}
+
 static float InterpolateCurrentMultiplier(int device, float real_current) {
     device = ClampDevice(device);
     int n = curve_n[device];
@@ -290,6 +314,11 @@ void PwrCal_Init(pwr_cal_type_t type, float default_voltage_cal,
 	//cmddetail:"fn":"CurrentCurveClearCmd","file":"driver/drv_pwrCal.c","requires":"",
 	//cmddetail:"examples":""}
     CMD_RegisterCommand("CurrentCurveClear", CurrentCurveClearCmd, NULL);
+	//cmddetail:{"name":"CurrentRawPublish","args":"0Or1",
+	//cmddetail:"descr":"Toggle publishing the RAW (gain+offset calibrated, but BEFORE the low-load Current curve) Current to MQTT (current_raw / current_raw_b), on every real measurement (same cadence as Current itself - not tied to webpage renders like current_calc_pv). Temporary tuning aid: lets the curve stay active (good displayed values) while clean, curve-free reference data accumulates in parallel for re-deriving curve points. Not persisted across reboot - turn off manually when done.",
+	//cmddetail:"fn":"CurrentRawPublishCmd","file":"driver/drv_pwrCal.c","requires":"",
+	//cmddetail:"examples":""}
+    CMD_RegisterCommand("CurrentRawPublish", CurrentRawPublishCmd, NULL);
 }
 
 void PwrCal_PublishPeriodic(void) {
@@ -328,6 +357,11 @@ void PwrCal_ScaleForDevice(int device, int raw_voltage, float raw_current, int r
 
     *real_voltage = Scale(raw_voltage, voltage_cal);
     *real_current = Scale(raw_current - current_offset_raw, current_cal);
+    if (publish_raw_current) {
+        MQTT_PublishMain_StringFloat(
+            device == 0 ? "current_raw" : "current_raw_b",
+            *real_current, 3, OBK_PUBLISH_FLAG_QOS_ZERO);
+    }
     *real_current *= InterpolateCurrentMultiplier(device, *real_current);
     *real_power = Scale(raw_power, power_cal);
 }
