@@ -430,6 +430,7 @@ static int bl0942_shared_pending_device = BL0942_DEVICE_INDEX_0;
 
 void BL0942_UART_RunEverySecond(void) {
   int next_device;
+  int device_to_parse;
 
   PwrCal_PublishPeriodic();
 
@@ -442,23 +443,31 @@ void BL0942_UART_RunEverySecond(void) {
     return;
   }
 
-  // Parse whatever arrived on the shared rx line in response to
-  // whichever chip we queried last tick.
-  BL0942_UART_TryToGetNextPacket(bl0942_shared_pending_device, UART_PORT_INDEX_0);
-
   // Decide which chip to query THIS tick - alternate if both are
   // enabled, otherwise always the one that is.
-  next_device = bl0942_shared_pending_device;
+  device_to_parse = bl0942_shared_pending_device;
+  next_device = device_to_parse;
   if ((bl0942_opts & (BL0942_OPTBIT0_UART1 | BL0942_OPTBIT1_UART2)) ==
       (BL0942_OPTBIT0_UART1 | BL0942_OPTBIT1_UART2)) {
-    next_device = (bl0942_shared_pending_device == BL0942_DEVICE_INDEX_0)
+    next_device = (device_to_parse == BL0942_DEVICE_INDEX_0)
                     ? BL0942_DEVICE_INDEX_1 : BL0942_DEVICE_INDEX_0;
   } else if (bl0942_opts & BL0942_OPTBIT0_UART1) {
     next_device = BL0942_DEVICE_INDEX_0;
   } else if (bl0942_opts & BL0942_OPTBIT1_UART2) {
     next_device = BL0942_DEVICE_INDEX_1;
   }
+  bl0942_shared_pending_device = next_device;
 
+  // 2026-10-22: a query-kuldes - KULONOSEN a bit-bang TX a P24-en,
+  // device 1/lakas fele - IDOZITES-KRITIKUS: barmilyen megszakitas/
+  // keses a bitfolyam kozepén eltorzithatja a kimeno kerest, amit a
+  // chip utana nem ert meg (nincs valasz vagy rossz checksum). Ezert
+  // ELOSZOR ezt kuldjuk ki, MIELOTT barmilyen hosszabb (a feldolgozas
+  // soran esetleg MQTT-publikalassal/WiFi-aktivitassal jaro) munkat
+  // vegeznenk. A user eszrevette, hogy a CurrentRawPublish bekapcsolasa
+  // (minden tick-en 3 uj MQTT-publikalas) ota a lakas csatorna sokkal
+  // ritkabban valaszol - ez pontosan ezzel a regi sorrenddel
+  // (feldolgozas+publikalas a kovetkezo query ELOTT) magyarazhato.
   if (next_device == BL0942_DEVICE_INDEX_0) {
     UART_InitUARTEx(UART_PORT_INDEX_0, bl0942_baudRate, 0, false);
     UART_SendByteEx(UART_PORT_INDEX_0, BL0942_UART_CMD_READ(BL0942_UART_ADDR));
@@ -468,7 +477,11 @@ void BL0942_UART_RunEverySecond(void) {
     BL0942_SoftUART_SendByte(BL0942_SHARED_RX_P24_PIN, BL0942_UART_CMD_READ(BL0942_UART_ADDR), bitUs);
     BL0942_SoftUART_SendByte(BL0942_SHARED_RX_P24_PIN, BL0942_UART_REG_PACKET, bitUs);
   }
-  bl0942_shared_pending_device = next_device;
+
+  // Parse whatever arrived on the shared rx line in response to
+  // whichever chip we queried LAST tick - csak EZUTAN, a query mar
+  // elment, nem erinti a most elkuldott bitfolyamot.
+  BL0942_UART_TryToGetNextPacket(device_to_parse, UART_PORT_INDEX_0);
 }
 #else
 void BL0942_UART_RunEverySecond(void) {
