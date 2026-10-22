@@ -55,12 +55,23 @@ static int ClampDevice(int device) {
 }
 
 // Ideiglenes (nem perzisztalt, alapertelmezetten KI) kapcsolo: ha BE van
-// kapcsolva, minden meresnel kipublikalja a NYERS (gain+offset kalibralt,
-// de a kis-terheleses gorbe ELOTTI) Current-et is, csatorankent kulon
-// topicra. Ezzel a korrekcios gorbe elesben maradhat (jo erteket mutat
-// a felhasznalonak), mialatt PARHUZAMOSAN tiszta, korrekcio-mentes
-// referencia-adat gyulik a HA-ban a gorbe pontosabb utanhangolasahoz -
-// nem kell visszafejteni a nyers erteket a mar alkalmazott korrekcion at.
+// kapcsolva, minden VALODI meresnel (nem csak valtozaskor - a sima
+// Voltage/Current/Power MQTT-publikalas a changeSendThreshold + ~60
+// tick-es heartbeat miatt erosen szurt) kipublikalja a Voltage/Current/
+// Power nyers (gain+offset kalibralt - Current eseten meg a kis-
+// terheleses gorbe ELOTTI) erteket is, csatorankent kulon topicra.
+// 2026-10-22: kiterjesztve Voltage-ra es Power-ra is (eredetileg csak
+// Current volt) - a user eszrevette, hogy a sima (szurt) Current-
+// mintaszam majdnem egyenlo a ket csatornan (mert a heartbeat
+// elfedi a kulonbseget), es csak a gate nelkuli current_raw mutatta
+// meg a valodi teljesitmeny-kulonbseget (sikeres meresek aranya) a ket
+// csatorna kozott - ugyanez
+// a torzitas Voltage/Power eseten is fennallhat, szeretnenk azt is latni.
+// Apparent/Reactive/PF nem kell kulon, mert mind V/I/P-bol szamolhato.
+// Ezzel a korrekcios gorbe elesben maradhat (jo erteket mutat a
+// felhasznalonak), mialatt PARHUZAMOSAN tiszta, szures-mentes
+// referencia-adat gyulik a HA-ban - nem kell visszafejteni semmit a mar
+// alkalmazott szuresen/korrekcion at.
 // Szandekosan NEM a /startup_command-ba valo, ideiglenes hangolasi
 // eszkoz ("amig beall a rendszer") - manualisan kapcsolando ki, ha mar
 // nem kell.
@@ -315,7 +326,7 @@ void PwrCal_Init(pwr_cal_type_t type, float default_voltage_cal,
 	//cmddetail:"examples":""}
     CMD_RegisterCommand("CurrentCurveClear", CurrentCurveClearCmd, NULL);
 	//cmddetail:{"name":"CurrentRawPublish","args":"0Or1",
-	//cmddetail:"descr":"Toggle publishing the RAW (gain+offset calibrated, but BEFORE the low-load Current curve) Current to MQTT (current_raw / current_raw_b), on every real measurement (same cadence as Current itself - not tied to webpage renders like current_calc_pv). Temporary tuning aid: lets the curve stay active (good displayed values) while clean, curve-free reference data accumulates in parallel for re-deriving curve points. Not persisted across reboot - turn off manually when done.",
+	//cmddetail:"descr":"Toggle publishing RAW Voltage/Current/Power (gain+offset calibrated; Current also BEFORE the low-load curve) to MQTT (voltage_raw/current_raw/power_raw, +_b for device 1), on EVERY successful measurement - not gated by changeSendThreshold/heartbeat like the normal Voltage/Current/Power topics, and not tied to webpage renders like current_calc_pv. Temporary tuning/debug aid: lets the curve stay active (good displayed values) while clean, filter-free reference data accumulates in parallel. Not persisted across reboot - turn off manually when done.",
 	//cmddetail:"fn":"CurrentRawPublishCmd","file":"driver/drv_pwrCal.c","requires":"",
 	//cmddetail:"examples":""}
     CMD_RegisterCommand("CurrentRawPublish", CurrentRawPublishCmd, NULL);
@@ -357,13 +368,19 @@ void PwrCal_ScaleForDevice(int device, int raw_voltage, float raw_current, int r
 
     *real_voltage = Scale(raw_voltage, voltage_cal);
     *real_current = Scale(raw_current - current_offset_raw, current_cal);
+    *real_power = Scale(raw_power, power_cal);
     if (publish_raw_current) {
+        MQTT_PublishMain_StringFloat(
+            device == 0 ? "voltage_raw" : "voltage_raw_b",
+            *real_voltage, 1, OBK_PUBLISH_FLAG_QOS_ZERO);
         MQTT_PublishMain_StringFloat(
             device == 0 ? "current_raw" : "current_raw_b",
             *real_current, 3, OBK_PUBLISH_FLAG_QOS_ZERO);
+        MQTT_PublishMain_StringFloat(
+            device == 0 ? "power_raw" : "power_raw_b",
+            *real_power, 2, OBK_PUBLISH_FLAG_QOS_ZERO);
     }
     *real_current *= InterpolateCurrentMultiplier(device, *real_current);
-    *real_power = Scale(raw_power, power_cal);
 }
 
 float PwrCal_ScalePowerOnly(int raw_power) {
