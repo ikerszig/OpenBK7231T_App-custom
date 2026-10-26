@@ -43,7 +43,7 @@ static int latest_raw_power;
 // lakas 0.75-1.00A savjaban tartosan ~60%-os maradek hibat hagyott, mig
 // minden mas sav ~10% alatt volt) - ezert ket KULON gorbe-tomb van,
 // device-index szerint valasztva.
-#define MAX_CURVE_POINTS 36
+#define MAX_CURVE_POINTS 24
 #define CURVE_DEVICE_COUNT 2
 static float curve_current[CURVE_DEVICE_COUNT][MAX_CURVE_POINTS];
 static float curve_mult[CURVE_DEVICE_COUNT][MAX_CURVE_POINTS];
