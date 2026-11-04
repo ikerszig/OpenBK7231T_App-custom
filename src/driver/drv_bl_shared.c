@@ -50,7 +50,7 @@ int actual_mday[BL_SENSDATASETS_COUNT] = { -1 };
 // note that Wh/kWh units are overridden in hass_init_energy_sensor_device_info()
 const char UNIT_WH[] = "Wh";
 struct energysensor {
-  energySensorNames_t names;
+  energySensorNames_t names;.
 	byte rounding_decimals;
 	// Variables below are for optimization
 	// We can't send a full MQTT update every second.
